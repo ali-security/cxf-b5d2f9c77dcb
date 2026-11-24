@@ -18,6 +18,7 @@
  */
 package org.apache.cxf.rs.security.oauth2.utils;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -26,6 +27,11 @@ import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 
+import org.apache.cxf.common.util.Base64Utility;
+import org.apache.cxf.jaxrs.ext.MessageContext;
+import org.apache.cxf.jaxrs.ext.MessageContextImpl;
+import org.apache.cxf.message.Message;
+import org.apache.cxf.message.MessageImpl;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -72,6 +78,80 @@ public class AuthorizationUtilsTest extends Assert {
             assertEquals(401, r.getStatus());
             Object value = r.getMetadata().getFirst(HttpHeaders.WWW_AUTHENTICATE);
             assertNull(value);
+        }
+    }
+
+    @Test
+    public void testThrowAuthorizationFailureWithRealm() {
+        try {
+            AuthorizationUtils.throwAuthorizationFailure(Collections.singleton("Basic"), "oauth");
+            fail("WebApplicationException expected");
+        } catch (WebApplicationException ex) {
+            Response r = ex.getResponse();
+            assertEquals(401, r.getStatus());
+            Object value = r.getMetadata().getFirst(HttpHeaders.WWW_AUTHENTICATE);
+            assertNotNull(value);
+            assertEquals("Basic realm=\"oauth\"", value.toString());
+        }
+    }
+
+    @Test
+    public void testThrowAuthorizationFailureWithRealmInvalidCharacters() {
+        String realm = "oauth\r\n\r\n\r\nX-Injected: true";
+        try {
+            AuthorizationUtils.throwAuthorizationFailure(Collections.singleton("Basic"), realm);
+            fail("WebApplicationException expected");
+        } catch (WebApplicationException ex) {
+            Response r = ex.getResponse();
+            assertEquals(401, r.getStatus());
+            Object value = r.getMetadata().getFirst(HttpHeaders.WWW_AUTHENTICATE);
+            assertNotNull(value);
+            assertEquals("Basic realm=\"oauth______X-Injected: true\"", value.toString());
+        }
+    }
+
+    @Test
+    public void testGetAuthorizationPartsWithMultipleHeadersFails() {
+        Message m = new MessageImpl();
+        m.put(Message.PROTOCOL_HEADERS, Collections.singletonMap(HttpHeaders.AUTHORIZATION,
+                Arrays.asList("Basic YWxpY2U6c2VjcmV0", "Bearer token")));
+        MessageContext mc = new MessageContextImpl(m);
+
+        try {
+            AuthorizationUtils.getAuthorizationParts(mc);
+            fail("WebApplicationException expected");
+        } catch (WebApplicationException ex) {
+            assertEquals(401, ex.getResponse().getStatus());
+        }
+    }
+
+    @Test
+    public void testGetBasicAuthParts() {
+        String basicAuthData = Base64Utility.encode("alice:secret".getBytes());
+
+        String[] parts = AuthorizationUtils.getBasicAuthParts(basicAuthData);
+        assertArrayEquals(new String[] {"alice", "secret"}, parts);
+    }
+
+    @Test
+    public void testGetBasicAuthPartsInvalidBase64() {
+        try {
+            AuthorizationUtils.getBasicAuthParts("not-base64");
+            fail("WebApplicationException expected");
+        } catch (WebApplicationException ex) {
+            assertEquals(401, ex.getResponse().getStatus());
+        }
+    }
+
+    @Test
+    public void testGetBasicAuthPartsMissingSeparator() {
+        String basicAuthData = Base64Utility.encode("alice".getBytes());
+
+        try {
+            AuthorizationUtils.getBasicAuthParts(basicAuthData);
+            fail("WebApplicationException expected");
+        } catch (WebApplicationException ex) {
+            assertEquals(401, ex.getResponse().getStatus());
         }
     }
 }

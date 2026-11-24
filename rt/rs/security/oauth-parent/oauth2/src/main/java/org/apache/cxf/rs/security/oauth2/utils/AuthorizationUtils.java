@@ -95,12 +95,16 @@ public final class AuthorizationUtils {
         }
         if (sb.length() > 0) {
             if (realm != null) {
-                sb.append(" realm=\"" + realm + "\"");
+                sb.append(" realm=\"" + stripControlCharacters(realm) + "\"");
             }
             rb.header(HttpHeaders.WWW_AUTHENTICATE, sb.toString());
         }
         Response r = rb.build();
         throw ExceptionUtils.toNotAuthorizedException(null, r);
+    }
+
+    public static String stripControlCharacters(String value) {
+        return value.replaceAll("[\\p{Cntrl}&&[^\\t]]", "_");
     }
 
 }
